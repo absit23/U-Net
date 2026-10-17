@@ -1,0 +1,9 @@
+torch
+torchvision
+albumentations
+opencv-python
+matplotlib
+numpy
+tqdm
+torchinfo
+roboflow
