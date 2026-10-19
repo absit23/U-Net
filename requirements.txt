@@ -1,6 +1,8 @@
 torch
 torchvision
+segmentation-models-pytorch
 albumentations
+timm
 opencv-python
 matplotlib
 numpy
