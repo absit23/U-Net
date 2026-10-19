@@ -10,13 +10,15 @@ def build_model(model_name, n_channels=3, n_classes=7, pretrained=True):
     if name in ("unet_mobilenet", "mobilenet_unet"):
         from .unet_mobilenet import UNetMobileNetV3
         return UNetMobileNetV3(n_channels, n_classes, pretrained)
-    # Planned baselines (add the file, then enable here):
-    #   "deeplabv3plus" -> models/deeplabv3plus.py
-    #   "segformer"     -> models/segformer.py
+    if name in ("deeplabv3plus", "deeplabv3+"):
+        from .deeplabv3plus import DeepLabV3Plus
+        return DeepLabV3Plus(n_channels, n_classes, pretrained)
+    # Planned baseline (add the file, then enable here):
+    #   "segformer" -> models/segformer.py
     raise ValueError(f"Unknown model_name '{model_name}'. Available: {AVAILABLE_MODELS}")
 
 
-AVAILABLE_MODELS = ["unet", "unet_mobilenet"]
+AVAILABLE_MODELS = ["unet", "unet_mobilenet", "deeplabv3plus"]
 
 
 def print_model_summary(model, model_name, batch_size, img_size, device):
