@@ -13,12 +13,19 @@ def build_model(model_name, n_channels=3, n_classes=7, pretrained=True):
     if name in ("deeplabv3plus", "deeplabv3+"):
         from .deeplabv3plus import DeepLabV3Plus
         return DeepLabV3Plus(n_channels, n_classes, pretrained)
-    # Planned baseline (add the file, then enable here):
-    #   "segformer" -> models/segformer.py
+    if name == "unet_resnet34":
+        from .unet_resnet34 import UNetResNet34
+        return UNetResNet34(n_channels, n_classes, pretrained)
+    if name == "segformer":
+        from .segformer import SegFormer
+        return SegFormer(n_channels, n_classes, pretrained, encoder="mit_b2")
+    if name == "segformer_b0":
+        from .segformer import SegFormer
+        return SegFormer(n_channels, n_classes, pretrained, encoder="mit_b0")
     raise ValueError(f"Unknown model_name '{model_name}'. Available: {AVAILABLE_MODELS}")
 
 
-AVAILABLE_MODELS = ["unet", "unet_mobilenet", "deeplabv3plus"]
+AVAILABLE_MODELS = ["unet", "unet_mobilenet", "deeplabv3plus", "unet_resnet34", "segformer", "segformer_b0"]
 
 
 def print_model_summary(model, model_name, batch_size, img_size, device):
