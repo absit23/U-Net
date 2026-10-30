@@ -35,7 +35,9 @@ def main(args):
         print("WARNING: no test split found; evaluating on 'valid'. Do not report this as a test result.")
     loader = build_loader(args.data_dir, split, img_size, args.batch_size, args.num_workers, False)
 
-    model = build_model(model_name, 3, num_classes, pretrained=False).to(device)
+    #model = build_model(model_name, 3, num_classes, pretrained=False).to(device)
+    model = build_model(model_name, 3, num_classes, pretrained=False,
+                    head=ckpt.get("head", "flat"), class_names=class_names).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
 
     # Same (weighted) loss as training so test loss is comparable with val loss.
