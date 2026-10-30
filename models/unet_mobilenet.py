@@ -4,7 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as tvm
 
-from .unet_parts import DoubleConv, OutConv
+#from .unet_parts import DoubleConv, OutConv
+from .heads import build_head
+from .unet_parts import DoubleConv
 
 
 class UpBlock(nn.Module):
@@ -23,7 +25,8 @@ class UpBlock(nn.Module):
 
 
 class UNetMobileNetV3(nn.Module):
-    def __init__(self, n_channels=3, n_classes=7, pretrained=True):
+    #def __init__(self, n_channels=3, n_classes=7, pretrained=True):
+     def __init__(self, n_channels=3, n_classes=7, pretrained=True):
         super().__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
