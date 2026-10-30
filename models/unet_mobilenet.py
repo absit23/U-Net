@@ -48,7 +48,8 @@ class UNetMobileNetV3(nn.Module):
         self.up2 = UpBlock(128 + 40, 64)
         self.up3 = UpBlock(64 + 24, 32)
         self.up4 = UpBlock(32 + 16, 16)
-        self.outc = OutConv(16, n_classes)
+        #self.outc = OutConv(16, n_classes)
+        self.outc = build_head(head, 16, class_names or [str(i) for i in range(n_classes)])
 
     def forward(self, x):
         x1 = self.inc(x)
