@@ -2,14 +2,19 @@
 import torch.nn as nn
 
 
-def build_model(model_name, n_channels=3, n_classes=7, pretrained=True):
+#def build_model(model_name, n_channels=3, n_classes=7, pretrained=True):
+ def build_model(model_name, n_channels=3, n_classes=7, pretrained=True, head="flat", class_names=None):
+      name = model_name.lower()
+      if head != "flat" and name not in ("unet_mobilenet", "mobilenet_unet"):
+          raise ValueError(f"--head {head} is only implemented for unet_mobilenet.")
     name = model_name.lower()
     if name == "unet":
         from .unet import UNet
         return UNet(n_channels, n_classes)
     if name in ("unet_mobilenet", "mobilenet_unet"):
         from .unet_mobilenet import UNetMobileNetV3
-        return UNetMobileNetV3(n_channels, n_classes, pretrained)
+        #return UNetMobileNetV3(n_channels, n_classes, pretrained)
+        return UNetMobileNetV3(n_channels, n_classes, pretrained, head, class_names)
     if name in ("deeplabv3plus", "deeplabv3+"):
         from .deeplabv3plus import DeepLabV3Plus
         return DeepLabV3Plus(n_channels, n_classes, pretrained)
