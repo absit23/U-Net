@@ -27,6 +27,8 @@ def parse_args():
     p.add_argument("--data_dir", required=True, help="Dataset root with train/ and valid/")
     p.add_argument("--variant", default="7class", choices=["6class", "7class"])
     p.add_argument("--model_name", default="unet_mobilenet", choices=AVAILABLE_MODELS)
+    p.add_argument("--head", default="flat", choices=["flat", "hier"],
+               help="flat = original 1x1 conv | hier = hierarchical severity head (unet_mobilenet only)")
     p.add_argument("--img_size", type=int, default=512)
     p.add_argument("--batch_size", type=int, default=8)
     p.add_argument("--epochs", type=int, default=50)
@@ -62,7 +64,10 @@ def main(args):
     train_loader = build_loader(args.data_dir, "train", args.img_size, args.batch_size, args.num_workers, True, pin)
     val_loader = build_loader(args.data_dir, "valid", args.img_size, args.batch_size, args.num_workers, False, pin)
 
-    model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)
+    #model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)
+    model = build_model(args.model_name, 3, num_classes, args.pretrained,
+                    head=args.head, class_names=class_names).to(device)
+    
     print_model_summary(model, args.model_name, args.batch_size, args.img_size, device)
 
     weights = resolve_class_weights(args.class_weights, class_names, args.data_dir)
@@ -109,7 +114,7 @@ def main(args):
             "optimizer_state_dict": optimizer.state_dict(), "scheduler_state_dict": scheduler.state_dict(),
             "best_miou": best_miou, "best_epoch": best_epoch, "best_metrics": best_metrics,
             "history": history, "variant": args.variant, "class_names": class_names,
-            "model_name": args.model_name, "img_size": args.img_size, "class_weights": weights,
+            "model_name": args.model_name, "head": args.head, "img_size": args.img_size, "class_weights": weights,
         }
         save_checkpoint(last_path(exp_dir, args.model_name), state)
         if is_best:
