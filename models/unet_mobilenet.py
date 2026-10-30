@@ -26,7 +26,7 @@ class UpBlock(nn.Module):
 
 class UNetMobileNetV3(nn.Module):
     #def __init__(self, n_channels=3, n_classes=7, pretrained=True):
-     def __init__(self, n_channels=3, n_classes=7, pretrained=True):
+     def __init__(self, n_channels=3, n_classes=7, pretrained=True, head="flat", class_names=None):
         super().__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
