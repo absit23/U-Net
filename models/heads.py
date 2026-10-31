@@ -1,5 +1,9 @@
-"""Segmentation heads. The flat head is the original; the hierarchical head
-asks a few yes/no questions and multiplies the answers into class probabilities.
+"""Segmentation heads.
+  flat  : original, one score per class.
+  hier  : tree over ALL classes (first hierarchical attempt).
+  hier2 : normal softmax for background / efflorescence / cracks / "spalling family",
+          and a small severity tree inside the spalling family only, following the
+          dataset definitions: rebar exposed? -> corroded? -> Moderate vs Delamination.
 
 Both return [B, n_classes, H, W] "logits" in class-ID order, so the loss,
 metrics and evaluate.py work unchanged. (The hierarchical head returns
@@ -72,9 +76,55 @@ class HierarchicalHead(nn.Module):
         return torch.stack(out, dim=1)
 
 
+class SeverityHead(nn.Module):
+    """hier2. Same number of parameters as the flat head.
+
+    Step 1 (ordinary softmax, 1x1 conv): Background / Efflorescence / Microcrack /
+            Structural crack / SPALLING-FAMILY.
+    Step 2 (only inside the spalling family, three 1x1 convs):
+            rebar exposed?  no  -> Minor spalling
+                            yes -> corroded?  yes -> Rebar corrosion
+                                              no  -> Moderate spalling vs Delamination (major)
+    P(class) = product along its path; probabilities sum to 1.
+    """
+
+    def __init__(self, in_channels, class_names):
+        super().__init__()
+        self.class_names = list(class_names)
+        self.idx = {n: i for i, n in enumerate(self.class_names)}
+        for n in ["Background", REBAR] + SPALL_LEVELS:
+            if n not in self.idx:
+                raise ValueError(f"Severity head needs class '{n}' (got {self.class_names}).")
+        self.top_names = ["Background"] + [n for n in OTHER_DAMAGE if n in self.idx]
+        self.top = nn.Conv2d(in_channels, len(self.top_names) + 1, 1)   # last channel = spalling family
+        self.exposed = nn.Conv2d(in_channels, 1, 1)
+        self.corroded = nn.Conv2d(in_channels, 1, 1)
+        self.major = nn.Conv2d(in_channels, 1, 1)
+
+    def forward(self, x):
+        ls = F.logsigmoid
+        top = F.log_softmax(self.top(x), dim=1)
+        log_spall = top[:, -1:]                                   # [B,1,H,W]
+        exposed, corroded, major = self.exposed(x), self.corroded(x), self.major(x)
+
+        log_exposed = log_spall + ls(exposed)
+        log_clean = log_exposed + ls(-corroded)                   # exposed, not corroded
+
+        out = [None] * len(self.class_names)
+        for i, n in enumerate(self.top_names):
+            out[self.idx[n]] = top[:, i]
+        out[self.idx["Minor spalling"]] = (log_spall + ls(-exposed))[:, 0]
+        out[self.idx[REBAR]] = (log_exposed + ls(corroded))[:, 0]
+        out[self.idx["Moderate spalling"]] = (log_clean + ls(-major))[:, 0]
+        out[self.idx["Delamination"]] = (log_clean + ls(major))[:, 0]
+        return torch.stack(out, dim=1)
+
+
 def build_head(head, in_channels, class_names):
     if head == "flat":
         return FlatHead(in_channels, class_names)
     if head == "hier":
         return HierarchicalHead(in_channels, class_names)
-    raise ValueError(f"Unknown head '{head}'. Choose 'flat' or 'hier'.")
+    if head == "hier2":
+        return SeverityHead(in_channels, class_names)
+    raise ValueError(f"Unknown head '{head}'. Choose 'flat', 'hier' or 'hier2'.")
