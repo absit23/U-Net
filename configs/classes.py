@@ -13,13 +13,20 @@ CLASSES_7 = [
 # 6-class variant = same, without Efflorescence
 CLASSES_6 = [c for c in CLASSES_7 if c != "Efflorescence"]
 
-VARIANTS = {"7class": CLASSES_7, "6class": CLASSES_6}
+# Merged-severity variant: Delamination + Rebar corrosion -> Severe spalling.
+# Masks must come from make_merged_dataset.py (IDs are baked into the mask files).
+CLASSES_M = [
+    "Background", "Efflorescence", "Microcrack", "Minor spalling",
+    "Moderate spalling", "Severe spalling", "Structural crack",
+]
+
+VARIANTS = {"7class": CLASSES_7, "6class": CLASSES_6, "merged6": CLASSES_M}
 
 # Hand-set starting weights (by name, so both variants use the same values).
 # Prefer `--class_weights auto` to derive them from the training masks.
 _MANUAL_WEIGHTS = {
     "Background": 0.2, "Delamination": 1.0, "Efflorescence": 2.5,
-    "Microcrack": 6.0, "Minor spalling": 12.0, "Moderate spalling": 2.0,
+    "Microcrack": 6.0, "Minor spalling": 12.0, "Moderate spalling": 2.0, "Severe spalling": 0.5,
     "Rebar corrosion": 0.5, "Structural crack": 1.0,
 }
 
