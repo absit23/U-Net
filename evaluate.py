@@ -57,7 +57,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Evaluate a concrete-damage segmentation checkpoint")
     p.add_argument("--data_dir", required=True)
     p.add_argument("--checkpoint_path", required=True)
-    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6"], help="Only used if the checkpoint has no class names")
+    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6", "orig8"], help="Only used if the checkpoint has no class names")
     p.add_argument("--model_name", default="unet_mobilenet", help="Only used if the checkpoint has no model name")
     p.add_argument("--img_size", type=int, default=None, help="Default: value stored in the checkpoint")
     p.add_argument("--batch_size", type=int, default=8)

@@ -20,13 +20,20 @@ CLASSES_M = [
     "Moderate spalling", "Severe spalling", "Structural crack",
 ]
 
-VARIANTS = {"7class": CLASSES_7, "6class": CLASSES_6, "merged6": CLASSES_M}
+# Original Mendeley/Roboflow dataset, untouched (8 damage classes, no Efflorescence).
+CLASSES_O = [
+    "Background", "Concrete crushing", "Delamination", "Microcrack",
+    "Minor spalling", "Moderate spalling", "Rebar corrosion",
+    "Structural crack", "Structural deformation",
+]
+
+VARIANTS = {"7class": CLASSES_7, "6class": CLASSES_6, "merged6": CLASSES_M, "orig8": CLASSES_O}
 
 # Hand-set starting weights (by name, so both variants use the same values).
 # Prefer `--class_weights auto` to derive them from the training masks.
 _MANUAL_WEIGHTS = {
     "Background": 0.2, "Delamination": 1.0, "Efflorescence": 2.5,
-    "Microcrack": 6.0, "Minor spalling": 12.0, "Moderate spalling": 2.0, "Severe spalling": 0.5,
+    "Microcrack": 6.0, "Minor spalling": 12.0, "Moderate spalling": 2.0, "Severe spalling": 0.5, "Concrete crushing": 2.0, "Structural deformation": 2.0,
     "Rebar corrosion": 0.5, "Structural crack": 1.0,
 }
 

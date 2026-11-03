@@ -25,7 +25,7 @@ from training.tracker import ExperimentTracker, get_next_exp_name, new_history, 
 def parse_args():
     p = argparse.ArgumentParser(description="Train concrete-damage segmentation models")
     p.add_argument("--data_dir", required=True, help="Dataset root with train/ and valid/")
-    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6"])
+    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6", "orig8"])
     p.add_argument("--model_name", default="unet_mobilenet", choices=AVAILABLE_MODELS)
     p.add_argument("--head", default="flat", choices=["flat", "hier", "hier2"],
                help="flat = original 1x1 conv | hier = hierarchical severity head (unet_mobilenet only)")

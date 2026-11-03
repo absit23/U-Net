@@ -88,7 +88,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--src", required=True, help="Roboflow COCO export folder")
     p.add_argument("--out", required=True, help="Output folder (train/valid/test with images+masks)")
-    p.add_argument("--variant", default="7class", choices=["6class", "7class"])
+    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6", "orig8"])
     p.add_argument("--ignore", nargs="*", default=[], help="Class names to paint as background")
     args = p.parse_args()
 
