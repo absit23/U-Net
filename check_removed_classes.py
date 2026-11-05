@@ -4,7 +4,7 @@ silently turned into background when v1 was built from the original dataset.
     python check_removed_classes.py --v1 data\\dataset_v1 --orig data\\dataset_orig
 
 --orig is the folder made by datasets.coco_to_masks with --variant orig8
-(<orig>/<split>/images + masks). --v1 is the Roboflow flat export (jpg + _mask.png).
+(<orig>/<split>/images + masks). --v1 may be a Roboflow flat export (jpg + _mask.png) or <split>/images + <split>/masks.
 Images are matched by the name before '_jpg.rf.'.
 """
 import argparse
@@ -33,7 +33,9 @@ def main(v1, orig, top):
 
     matched, rows, v1_names = 0, [], set()
     for split in ("train", "valid", "test"):
-        for p in glob.glob(os.path.join(v1, split, "*_mask.png")):
+        v1_paths = (glob.glob(os.path.join(v1, split, "*_mask.png"))
+                    + glob.glob(os.path.join(v1, split, "masks", "*.png")))
+        for p in v1_paths:
             b = base(os.path.basename(p))
             v1_names.add(b)
             if b not in orig_masks:
