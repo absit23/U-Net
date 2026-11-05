@@ -39,6 +39,12 @@ def parse_args():
     p.add_argument("--class_weights", default=None,
                    help="None = manual defaults | 'auto' = from train masks | 'w0,w1,...' in class-ID order")
     p.add_argument("--num_workers", type=int, default=2)
+    p.add_argument("--cp_prob", type=float, default=0.0,
+                   help="Copy-paste augmentation probability per training image (0 = off)")
+    p.add_argument("--cp_classes", default="2,3,4,5",
+                   help="Mask IDs of the rare classes to paste (7class IDs: 2 Efflorescence, 3 Microcrack, 4 Minor, 5 Moderate)")
+    p.add_argument("--cp_max", type=int, default=2, help="Max regions pasted per image")
+    p.add_argument("--cp_min_area", type=int, default=30, help="Min region area in pixels")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--resume", default=None, help="Checkpoint to resume from")
     p.add_argument("--runs_dir", default="runs", help="Where experiment folders are saved (use a Drive path on Colab)")
@@ -61,7 +67,12 @@ def main(args):
 
     tracker = ExperimentTracker(exp_dir, args, class_names)
     pin = device.type == "cuda"
-    train_loader = build_loader(args.data_dir, "train", args.img_size, args.batch_size, args.num_workers, True, pin)
+    cp = None
+    if args.cp_prob > 0:
+        cp = dict(classes=[int(c) for c in args.cp_classes.split(",")], prob=args.cp_prob,
+                  max_pastes=args.cp_max, min_area=args.cp_min_area)
+    train_loader = build_loader(args.data_dir, "train", args.img_size, args.batch_size, args.num_workers, True, pin,
+                                copy_paste=cp)
     val_loader = build_loader(args.data_dir, "valid", args.img_size, args.batch_size, args.num_workers, False, pin)
 
     #model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)

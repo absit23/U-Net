@@ -3,6 +3,7 @@ import os
 import cv2
 from torch.utils.data import Dataset, DataLoader
 
+from .copy_paste import CopyPaste
 from .transforms import get_transforms
 
 IMG_EXTS = (".png", ".jpg", ".jpeg")
@@ -25,15 +26,20 @@ def resolve_split_dirs(data_dir, split):
 
 
 class ConcreteDamageDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, transform=None):
+    def __init__(self, images_dir, masks_dir, transform=None, copy_paste=None):
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
+        self.copy_paste = None
         self.image_filenames = sorted(
             f for f in os.listdir(images_dir)
             if f.lower().endswith(IMG_EXTS)
             and not os.path.splitext(f)[0].endswith("_mask")  # skip masks in flat layout
         )
+        if copy_paste:  # dict(classes=[...], prob=..., max_pastes=..., min_area=...) -- train split only
+            self.copy_paste = CopyPaste(self, **copy_paste)
+            print(f"Copy-paste on: donor images per class {self.copy_paste.summary()} | "
+                  f"prob={copy_paste.get('prob', 0.5)}")
 
     def _find_mask_path(self, img_name):
         stem = os.path.splitext(img_name)[0]
@@ -65,17 +71,21 @@ class ConcreteDamageDataset(Dataset):
         if mask is None:
             raise FileNotFoundError(f"Failed to read mask: {mask_path}")
 
+        if self.copy_paste is not None:
+            image, mask = self.copy_paste(image, mask, idx)
+
         if self.transform is not None:
             out = self.transform(image=image, mask=mask)
             image, mask = out["image"], out["mask"]
         return {"image": image, "mask": mask.long()}
 
 
-def build_loader(data_dir, split, img_size, batch_size, num_workers, is_train, pin_memory=False):
+def build_loader(data_dir, split, img_size, batch_size, num_workers, is_train, pin_memory=False, copy_paste=None):
     dirs = resolve_split_dirs(data_dir, split)
     if dirs is None:
         raise FileNotFoundError(f"Split '{split}' not found under '{data_dir}'.")
-    dataset = ConcreteDamageDataset(*dirs, transform=get_transforms(img_size, is_train))
+    dataset = ConcreteDamageDataset(*dirs, transform=get_transforms(img_size, is_train),
+                                    copy_paste=copy_paste if is_train else None)
     if len(dataset) == 0:
         raise ValueError(f"No images found for split '{split}' in '{dirs[0]}'.")
     return DataLoader(dataset, batch_size=batch_size, shuffle=is_train,
