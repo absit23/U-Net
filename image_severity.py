@@ -5,11 +5,16 @@ model's predicted mask, then the two are compared. It works with flat 7-class
 checkpoints (Delamination + Rebar corrosion are treated as Severe) and with the
 merged6 checkpoint, because classes are matched by name.
 
-Two rules are reported:
+Three rules are reported:
   A) Yasmin-style (thesis, Eq. 3.1): ratio = severe pixels / image pixels, then
      Less (<40%), Medium (40-69%), Very (>=70%).
   B) Worst level present: Severe if severe area >= t of the image, else Moderate if
      moderate area >= t, else Minor if minor area >= t, else None (t = --min_area).
+  C) Dominant level: if total spalling area >= t, the level (Minor / Moderate / Severe)
+     with the largest area; else None. Less sensitive to a small stray patch than B.
+Also reported: error of the severe-area ratio itself (percentage points), and Rules B/C
+restricted to images that really contain spalling (ground truth), because most of the
+'None' images are crack / bleeding images that are trivially easy.
 
 Example (each --run takes: label, checkpoint, data_dir):
     python image_severity.py --splits test ^
@@ -48,6 +53,25 @@ def level_a(r):
 
 def level_b(r, t):
     return np.where(r["sev"] >= t, 3, np.where(r["mod"] >= t, 2, np.where(r["min"] >= t, 1, 0)))
+
+
+def level_c(r, t):
+    total = r["sev"] + r["mod"] + r["min"]
+    dom = np.stack([r["min"], r["mod"], r["sev"]], 1).argmax(1) + 1
+    return np.where(total >= t, dom, 0)
+
+
+def mae_report(title, gt_r, ratios, runs, mask, rng, n_boot):
+    idx_all = np.flatnonzero(mask)
+    idx_sets = [rng.choice(idx_all, len(idx_all)) for _ in range(n_boot)]
+    print(f"\n===== {title} ({len(idx_all)} images) =====")
+    for l, _, _ in runs:
+        line = f"{l:<8}"
+        for fam, nm in (("sev", "severe"), ("mod", "moderate")):
+            err = np.abs(ratios[l]["pr"][fam] - gt_r[fam]) * 100
+            lo, hi = ci([err[i].mean() for i in idx_sets])
+            line += f"  {nm} ratio MAE {err[idx_all].mean():5.2f} pts [{lo:.2f}, {hi:.2f}]"
+        print(line)
 
 
 def qwk(gt, pr, k):
@@ -123,21 +147,36 @@ def run_analysis(runs, files, min_areas, n_boot, seed, out_csv=None):
         report(f"Rule B: worst level present (min area {100 * t:.1f}% of image)", gt_b,
                {l: level_b(ratios[l]["pr"], t) for l, _, _ in runs}, LABELS_B, rng, n_boot, full=(j == 0))
 
+    t0 = min_areas[0]
+    gt_c = level_c(gt_r, t0)
+    report(f"Rule C: dominant level (min total spalling {100 * t0:.1f}% of image)", gt_c,
+           {l: level_c(ratios[l]["pr"], t0) for l, _, _ in runs}, LABELS_B, rng, n_boot)
+
+    sp = gt_c > 0  # images that really contain spalling (from ground truth only)
+    print(f"\nImages with spalling in the ground truth: {int(sp.sum())} of {len(files)}")
+    report("Rule B on spalling images only", level_b(gt_r, t0)[sp],
+           {l: level_b(ratios[l]["pr"], t0)[sp] for l, _, _ in runs}, LABELS_B, rng, n_boot)
+    report("Rule C on spalling images only", gt_c[sp],
+           {l: level_c(ratios[l]["pr"], t0)[sp] for l, _, _ in runs}, LABELS_B, rng, n_boot)
+    mae_report("Error of the area ratio, all images", gt_r, ratios, runs, np.ones(len(files), bool), rng, n_boot)
+    mae_report("Error of the area ratio, spalling images only", gt_r, ratios, runs, sp, rng, n_boot)
+
     if out_csv:
         t = min_areas[0]
-        header = ["file", "gt_sev", "gt_mod", "gt_min", "gt_levelA", f"gt_levelB_t{t}"]
+        header = ["file", "gt_sev", "gt_mod", "gt_min", "gt_levelA", f"gt_levelB_t{t}", f"gt_levelC_t{t}"]
         for l, _, _ in runs:
-            header += [f"{l}_sev", f"{l}_mod", f"{l}_min", f"{l}_levelA", f"{l}_levelB"]
+            header += [f"{l}_sev", f"{l}_mod", f"{l}_min", f"{l}_levelA", f"{l}_levelB", f"{l}_levelC"]
         with open(out_csv, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(header)
             la = {l: level_a(ratios[l]["pr"]) for l, _, _ in runs}
             lb = {l: level_b(ratios[l]["pr"], t) for l, _, _ in runs}
+            lc = {l: level_c(ratios[l]["pr"], t) for l, _, _ in runs}
             for i, name in enumerate(files):
-                row = [name, *(f"{gt_r[x][i]:.5f}" for x in ("sev", "mod", "min")), gt_a[i], level_b(gt_r, t)[i]]
+                row = [name, *(f"{gt_r[x][i]:.5f}" for x in ("sev", "mod", "min")), gt_a[i], level_b(gt_r, t)[i], gt_c[i]]
                 for l, _, _ in runs:
                     p = ratios[l]["pr"]
-                    row += [f"{p['sev'][i]:.5f}", f"{p['mod'][i]:.5f}", f"{p['min'][i]:.5f}", la[l][i], lb[l][i]]
+                    row += [f"{p['sev'][i]:.5f}", f"{p['mod'][i]:.5f}", f"{p['min'][i]:.5f}", la[l][i], lb[l][i], lc[l][i]]
                 w.writerow(row)
         print(f"\nPer-image table saved to: {out_csv}")
 
