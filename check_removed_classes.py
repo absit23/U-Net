@@ -22,7 +22,7 @@ def base(name):
     return re.split(r"_jpg\.rf\.|\.rf\.", os.path.splitext(name)[0])[0]
 
 
-def main(v1, orig, top):
+def main(v1, orig, top, names):
     orig_masks, dup = {}, 0
     for split in ("train", "valid", "test"):
         for p in glob.glob(os.path.join(orig, split, "masks", "*.png")):
@@ -31,19 +31,21 @@ def main(v1, orig, top):
             orig_masks[b] = (split, p)
     print(f"original masks: {len(orig_masks)} (duplicate base names: {dup})")
 
-    matched, rows, v1_names = 0, [], set()
+    matched, rows, v1_names, v1_path, skipped = 0, [], set(), {}, []
     for split in ("train", "valid", "test"):
         v1_paths = (glob.glob(os.path.join(v1, split, "*_mask.png"))
                     + glob.glob(os.path.join(v1, split, "masks", "*.png")))
         for p in v1_paths:
             b = base(os.path.basename(p))
             v1_names.add(b)
+            v1_path[b] = p
             if b not in orig_masks:
                 continue
             matched += 1
             om = cv2.imread(orig_masks[b][1], cv2.IMREAD_GRAYSCALE)
             vm = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
             if om is None or vm is None or om.shape != vm.shape:
+                skipped.append((os.path.basename(p), None if om is None else om.shape, None if vm is None else vm.shape))
                 continue
             gone = np.isin(om, REMOVED)
             n = int(gone.sum())
@@ -58,6 +60,23 @@ def main(v1, orig, top):
         om = cv2.imread(orig_masks[b][1], cv2.IMREAD_GRAYSCALE)
         with_removed += int(np.isin(om, REMOVED).any())
     print(f"original images NOT in v1: {len(deleted)}, of which contain crushing/deformation: {with_removed}")
+
+    print(f"matched images skipped (unreadable or different mask size): {len(skipped)}")
+    for x in skipped[:5]:
+        print("   ", x)
+
+    for nm in names:
+        for b in orig_masks:
+            if b.startswith(nm):
+                om = cv2.imread(orig_masks[b][1], cv2.IMREAD_GRAYSCALE)
+                print(f"\n{b}: ORIGINAL mask class counts (ID: px) = "
+                      f"{ {int(i): int(c) for i, c in enumerate(np.bincount(om.ravel(), minlength=9)) if c} }")
+                if b in v1_path:
+                    vm = cv2.imread(v1_path[b], cv2.IMREAD_GRAYSCALE)
+                    print(f"{b}: v1 mask class counts (ID: px) = "
+                          f"{ {int(i): int(c) for i, c in enumerate(np.bincount(vm.ravel(), minlength=8)) if c} }")
+                else:
+                    print(f"{b}: not in v1")
 
     rows.sort(reverse=True)
     tot, bg = sum(r[0] for r in rows), sum(r[1] for r in rows)
@@ -78,5 +97,6 @@ if __name__ == "__main__":
     p.add_argument("--v1", required=True)
     p.add_argument("--orig", required=True)
     p.add_argument("--top", type=int, default=15)
+    p.add_argument("--name", nargs="*", default=[], help="Image base names to inspect, e.g. damage1098 damage1045")
     a = p.parse_args()
-    main(a.v1, a.orig, a.top)
+    main(a.v1, a.orig, a.top, a.name)
