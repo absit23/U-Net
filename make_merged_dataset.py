@@ -26,8 +26,9 @@ def is_mask(path):
 
 
 def sqrt_weights(counts):
+    # sqrt of the median-frequency ratio, ratio clipped to [0.1, 20] (matches the w_sqrt recipe)
     freq = counts / counts.sum()
-    return np.sqrt(np.median(freq) / freq)
+    return np.sqrt(np.clip(np.median(freq) / freq, 0.1, 20.0))
 
 
 def main(src, dst):
