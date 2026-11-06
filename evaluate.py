@@ -6,6 +6,7 @@ Class names / variant / model are read from the checkpoint.
 import argparse
 import os
 
+import numpy as np
 import torch
 
 from configs import get_class_names
@@ -17,6 +18,20 @@ from training.loops import evaluate_loader
 from training.losses import WeightedCombinedLoss
 from training.metrics import SegmentationMetrics
 from training.tracker import print_results, save_confusion_matrix
+
+
+def print_accuracy_metrics(confusion_matrix, class_names):
+    """Pixel accuracy (aAcc) and mean class accuracy (mAcc) for comparison with papers that report them.
+    Rows = ground truth, columns = prediction. mAcc = mean over classes of per-class pixel accuracy (= recall)."""
+    cm = np.asarray(confusion_matrix, dtype=float)
+    tp = np.diag(cm)
+    gt = cm.sum(axis=1)
+    per_class_acc = np.divide(tp, gt, out=np.full(len(gt), np.nan), where=gt > 0)
+    print("Accuracy metrics (for comparison with papers; aAcc is dominated by the background class)")
+    print(f"  aAcc  (pixel accuracy, all classes incl. background) : {tp.sum() / cm.sum():.4f}")
+    print(f"  mAcc  (mean class accuracy, incl. background)        : {np.nanmean(per_class_acc):.4f}")
+    print(f"  mAcc  (damage classes only, = mean Recall above)     : {np.nanmean(per_class_acc[1:]):.4f}")
+    print("  per-class accuracy: " + ", ".join(f"{n} {a:.3f}" for n, a in zip(class_names, per_class_acc)) + "\n")
 
 
 def main(args):
@@ -47,6 +62,7 @@ def main(args):
 
     m = evaluate_loader(model, loader, criterion, SegmentationMetrics(num_classes), device, desc=f"Eval ({split})")
     print_results(f"FINAL EVALUATION [{split}]: {model_name.upper()}  (loss {m['loss']:.4f})", m, class_names)
+    print_accuracy_metrics(m["confusion_matrix"], class_names)
 
     out_dir = os.path.dirname(os.path.abspath(args.checkpoint_path))
     save_confusion_matrix(m["confusion_matrix"], class_names, out_dir, prefix=f"confusion_matrix_{split}")
