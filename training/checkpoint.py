@@ -12,7 +12,14 @@ def last_path(exp_dir, model_name):
 
 
 def save_checkpoint(path, state):
-    torch.save(state, path)
+    """Atomic save: write to a temp file, flush to disk, then rename over the target.
+    If the machine sleeps or loses power mid-write, the previous checkpoint stays intact."""
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        torch.save(state, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def load_checkpoint(path, device):
