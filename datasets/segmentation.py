@@ -26,10 +26,11 @@ def resolve_split_dirs(data_dir, split):
 
 
 class ConcreteDamageDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, transform=None, copy_paste=None):
+    def __init__(self, images_dir, masks_dir, transform=None, copy_paste=None, remap=None):
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
+        self.remap = remap  # 256-entry LUT applied to mask values at load time
         self.copy_paste = None
         self.image_filenames = sorted(
             f for f in os.listdir(images_dir)
@@ -70,6 +71,8 @@ class ConcreteDamageDataset(Dataset):
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         if mask is None:
             raise FileNotFoundError(f"Failed to read mask: {mask_path}")
+        if self.remap is not None:
+            mask = cv2.LUT(mask, self.remap)
 
         if self.copy_paste is not None:
             image, mask = self.copy_paste(image, mask, idx)
@@ -80,12 +83,13 @@ class ConcreteDamageDataset(Dataset):
         return {"image": image, "mask": mask.long()}
 
 
-def build_loader(data_dir, split, img_size, batch_size, num_workers, is_train, pin_memory=False, copy_paste=None):
+def build_loader(data_dir, split, img_size, batch_size, num_workers, is_train, pin_memory=False,
+                 copy_paste=None, remap=None):
     dirs = resolve_split_dirs(data_dir, split)
     if dirs is None:
         raise FileNotFoundError(f"Split '{split}' not found under '{data_dir}'.")
     dataset = ConcreteDamageDataset(*dirs, transform=get_transforms(img_size, is_train),
-                                    copy_paste=copy_paste if is_train else None)
+                                    copy_paste=copy_paste if is_train else None, remap=remap)
     if len(dataset) == 0:
         raise ValueError(f"No images found for split '{split}' in '{dirs[0]}'.")
     return DataLoader(dataset, batch_size=batch_size, shuffle=is_train,

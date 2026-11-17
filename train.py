@@ -10,7 +10,7 @@ import os
 
 import torch
 
-from configs import get_class_names
+from configs import get_class_names, get_mask_remap
 from datasets import build_loader
 from models import build_model, print_model_summary
 from models.builder import AVAILABLE_MODELS
@@ -25,7 +25,8 @@ from training.tracker import ExperimentTracker, get_next_exp_name, new_history, 
 def parse_args():
     p = argparse.ArgumentParser(description="Train concrete-damage segmentation models")
     p.add_argument("--data_dir", required=True, help="Dataset root with train/ and valid/")
-    p.add_argument("--variant", default="7class", choices=["6class", "7class", "merged6", "orig8"])
+    p.add_argument("--variant", default="7class",
+                   choices=["6class", "7class", "merged6", "orig8", "crackmerged"])
     p.add_argument("--model_name", default="unet_mobilenet", choices=AVAILABLE_MODELS)
     p.add_argument("--head", default="flat", choices=["flat", "hier", "hier2"],
                help="flat = original 1x1 conv | hier = hierarchical severity head (unet_mobilenet only)")
@@ -71,9 +72,13 @@ def main(args):
     if args.cp_prob > 0:
         cp = dict(classes=[int(c) for c in args.cp_classes.split(",")], prob=args.cp_prob,
                   max_pastes=args.cp_max, min_area=args.cp_min_area)
+    remap = get_mask_remap(args.variant)
+    if remap is not None:
+        print(f"Mask remap active for variant '{args.variant}' (merged class IDs).")
     train_loader = build_loader(args.data_dir, "train", args.img_size, args.batch_size, args.num_workers, True, pin,
-                                copy_paste=cp)
-    val_loader = build_loader(args.data_dir, "valid", args.img_size, args.batch_size, args.num_workers, False, pin)
+                                copy_paste=cp, remap=remap)
+    val_loader = build_loader(args.data_dir, "valid", args.img_size, args.batch_size, args.num_workers, False, pin,
+                              remap=remap)
 
     #model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)
     model = build_model(args.model_name, 3, num_classes, args.pretrained,
@@ -81,7 +86,7 @@ def main(args):
     
     print_model_summary(model, args.model_name, args.batch_size, args.img_size, device)
 
-    weights = resolve_class_weights(args.class_weights, class_names, args.data_dir)
+    weights = resolve_class_weights(args.class_weights, class_names, args.data_dir, remap=remap)
     criterion = WeightedCombinedLoss(num_classes, args.weight_ce, args.weight_dice,
                                      torch.tensor(weights, dtype=torch.float32, device=device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)

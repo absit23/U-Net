@@ -25,6 +25,8 @@ class CopyPaste:
             m = cv2.imread(dataset._find_mask_path(name), cv2.IMREAD_GRAYSCALE)
             if m is None:
                 continue
+            if getattr(dataset, "remap", None) is not None:
+                m = cv2.LUT(m, dataset.remap)
             present = np.unique(m)
             for c in self.classes:
                 if c in present and int((m == c).sum()) >= min_area:
@@ -38,6 +40,8 @@ class CopyPaste:
         name = self.ds.image_filenames[i]
         img = cv2.cvtColor(cv2.imread(os.path.join(self.ds.images_dir, name)), cv2.COLOR_BGR2RGB)
         msk = cv2.imread(self.ds._find_mask_path(name), cv2.IMREAD_GRAYSCALE)
+        if getattr(self.ds, "remap", None) is not None:
+            msk = cv2.LUT(msk, self.ds.remap)
         return img, msk
 
     def __call__(self, image, mask, self_idx=None):

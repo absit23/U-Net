@@ -7,13 +7,15 @@ from configs import default_class_weights
 from datasets import resolve_split_dirs, ConcreteDamageDataset
 
 
-def compute_pixel_frequencies(data_dir, num_classes, split="train"):
+def compute_pixel_frequencies(data_dir, num_classes, split="train", remap=None):
     """Count pixels per class ID over the masks of a split."""
     dirs = resolve_split_dirs(data_dir, split)
     ds = ConcreteDamageDataset(*dirs)
     counts = np.zeros(num_classes, dtype=np.int64)
     for name in ds.image_filenames:
         mask = cv2.imread(ds._find_mask_path(name), cv2.IMREAD_GRAYSCALE)
+        if remap is not None:
+            mask = cv2.LUT(mask, remap)
         counts += np.bincount(mask.flatten(), minlength=num_classes)[:num_classes]
     return counts
 
@@ -27,13 +29,13 @@ def auto_weights(counts, min_w=0.1, max_w=20.0):
     return np.clip(weights, min_w, max_w).tolist()
 
 
-def resolve_class_weights(arg, class_names, data_dir):
+def resolve_class_weights(arg, class_names, data_dir, remap=None):
     """arg: None -> manual defaults, 'auto' -> from train masks, 'a,b,c' -> explicit list."""
     n = len(class_names)
     if arg is None:
         return default_class_weights(class_names)
     if arg == "auto":
-        counts = compute_pixel_frequencies(data_dir, n)
+        counts = compute_pixel_frequencies(data_dir, n, remap=remap)
         weights = auto_weights(counts)
         print("Pixel counts per class:", dict(zip(class_names, counts.tolist())))
         print("Auto class weights:   ", dict(zip(class_names, [round(w, 3) for w in weights])))

@@ -9,7 +9,7 @@ import os
 import numpy as np
 import torch
 
-from configs import get_class_names
+from configs import get_class_names, get_mask_remap
 from datasets import build_loader, resolve_split_dirs
 from models import build_model
 from training.checkpoint import load_checkpoint
@@ -48,7 +48,12 @@ def main(args):
     split = "test" if resolve_split_dirs(args.data_dir, "test") else "valid"
     if split == "valid":
         print("WARNING: no test split found; evaluating on 'valid'. Do not report this as a test result.")
-    loader = build_loader(args.data_dir, split, img_size, args.batch_size, args.num_workers, False)
+    remap = get_mask_remap(ckpt.get("variant", args.variant))
+    if remap is not None:
+        print("NOTE: this checkpoint uses merged class IDs, so the ground truth is merged too.\n"
+              "      For the full taxonomy use reconstruct_eval.py instead.")
+    loader = build_loader(args.data_dir, split, img_size, args.batch_size, args.num_workers,
+                          False, remap=remap)
 
     #model = build_model(model_name, 3, num_classes, pretrained=False).to(device)
     model = build_model(model_name, 3, num_classes, pretrained=False,
