@@ -2,10 +2,15 @@
 import torch.nn as nn
 
 
-def build_model(model_name, n_channels=3, n_classes=7, pretrained=True, head="flat", class_names=None):
+def build_model(model_name, n_channels=3, n_classes=7, pretrained=True, head="flat",
+                class_names=None, use_bag=True, use_osh=False):
     name = model_name.lower()
-    if head != "flat" and name not in ("unet_mobilenet", "mobilenet_unet"):
+    if head != "flat" and name not in ("unet_mobilenet", "mobilenet_unet", "sob_unet"):
         raise ValueError(f"--head {head} is only implemented for unet_mobilenet.")
+    if name in ("sob_unet", "sob"):
+        from .sob_unet import SOBUNet
+        return SOBUNet(n_channels, n_classes, pretrained, head, class_names,
+                       use_bag=use_bag, use_osh=use_osh)
     if name == "unet":
         from .unet import UNet
         return UNet(n_channels, n_classes)
@@ -27,7 +32,8 @@ def build_model(model_name, n_channels=3, n_classes=7, pretrained=True, head="fl
     raise ValueError(f"Unknown model_name '{model_name}'. Available: {AVAILABLE_MODELS}")
 
 
-AVAILABLE_MODELS = ["unet", "unet_mobilenet", "deeplabv3plus", "unet_resnet34", "segformer", "segformer_b0"]
+AVAILABLE_MODELS = ["unet", "unet_mobilenet", "deeplabv3plus", "unet_resnet34", "segformer",
+                    "segformer_b0", "sob_unet"]
 
 
 def print_model_summary(model, model_name, batch_size, img_size, device):

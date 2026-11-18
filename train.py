@@ -46,6 +46,12 @@ def parse_args():
                    help="Mask IDs of the rare classes to paste (7class IDs: 2 Efflorescence, 3 Microcrack, 4 Minor, 5 Moderate)")
     p.add_argument("--cp_max", type=int, default=2, help="Max regions pasted per image")
     p.add_argument("--cp_min_area", type=int, default=30, help="Min region area in pixels")
+    p.add_argument("--use_bag", action=argparse.BooleanOptionalAction, default=True,
+                   help="sob_unet: Boundary Attention Gate on/off (ablation switch)")
+    p.add_argument("--use_osh", action=argparse.BooleanOptionalAction, default=False,
+                   help="sob_unet: Ordinal Stage Head on/off (not implemented yet)")
+    p.add_argument("--weight_edge", type=float, default=0.3,
+                   help="sob_unet: weight of the boundary loss term")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--resume", default=None, help="Checkpoint to resume from")
     p.add_argument("--runs_dir", default="runs", help="Where experiment folders are saved (use a Drive path on Colab)")
@@ -82,13 +88,20 @@ def main(args):
 
     #model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)
     model = build_model(args.model_name, 3, num_classes, args.pretrained,
-                    head=args.head, class_names=class_names).to(device)
+                    head=args.head, class_names=class_names,
+                    use_bag=args.use_bag, use_osh=args.use_osh).to(device)
     
     print_model_summary(model, args.model_name, args.batch_size, args.img_size, device)
 
     weights = resolve_class_weights(args.class_weights, class_names, args.data_dir, remap=remap)
-    criterion = WeightedCombinedLoss(num_classes, args.weight_ce, args.weight_dice,
-                                     torch.tensor(weights, dtype=torch.float32, device=device))
+    w = torch.tensor(weights, dtype=torch.float32, device=device)
+    if args.model_name.lower() in ("sob_unet", "sob") and args.use_bag:
+        from training.sob_loss import SOBLoss
+        criterion = SOBLoss(num_classes, args.weight_ce, args.weight_dice, w,
+                            weight_edge=args.weight_edge)
+        print(f"Loss: segmentation + boundary term (weight {args.weight_edge})")
+    else:
+        criterion = WeightedCombinedLoss(num_classes, args.weight_ce, args.weight_dice, w)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     metrics = SegmentationMetrics(num_classes)
@@ -131,6 +144,7 @@ def main(args):
             "best_miou": best_miou, "best_epoch": best_epoch, "best_metrics": best_metrics,
             "history": history, "variant": args.variant, "class_names": class_names,
             "model_name": args.model_name, "head": args.head, "img_size": args.img_size, "class_weights": weights,
+            "use_bag": args.use_bag, "use_osh": args.use_osh,
         }
         save_checkpoint(last_path(exp_dir, args.model_name), state)
         if is_best:
