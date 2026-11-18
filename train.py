@@ -52,6 +52,8 @@ def parse_args():
                    help="sob_unet: Ordinal Stage Head on/off (not implemented yet)")
     p.add_argument("--weight_edge", type=float, default=0.3,
                    help="sob_unet: weight of the boundary loss term")
+    p.add_argument("--seed", type=int, default=None,
+                   help="fix the random seed so a run can be repeated; omit for an unseeded run")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--resume", default=None, help="Checkpoint to resume from")
     p.add_argument("--runs_dir", default="runs", help="Where experiment folders are saved (use a Drive path on Colab)")
@@ -60,6 +62,15 @@ def parse_args():
 
 
 def main(args):
+    if args.seed is not None:
+        import random
+        import numpy as np
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        print(f"Random seed fixed at {args.seed}")
+
     class_names = get_class_names(args.variant)
     num_classes = len(class_names)
 
