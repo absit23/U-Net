@@ -141,7 +141,9 @@ def main(args):
     class_ids = [int(c) for c in args.classes.split(",")]
 
     model = build_model(model_name, 3, len(class_names), pretrained=False,
-                        head=ckpt.get("head", "flat"), class_names=class_names).to(device)
+                        head=ckpt.get("head", "flat"), class_names=class_names,
+                        use_bag=ckpt.get("use_bag", True), use_osh=ckpt.get("use_osh", False),
+                        n_stages=ckpt.get("n_stages", 4)).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     print(f"Model: {model_name} | img_size {img_size} | device {device}")

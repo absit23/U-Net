@@ -44,6 +44,21 @@ VARIANTS = {"7class": CLASSES_7, "6class": CLASSES_6, "merged6": CLASSES_M,
 REMAPS = {"crackmerged": {7: 3}}
 
 
+# Ordinal damage chain used by the Ordinal Stage Head (OSH).
+# The four classes below are successive stages of one physical process, and the
+# order is the one the measured confusion follows: the confusion mass is
+# Minor<->Moderate (10k px), Moderate<->Delamination (334k px) and
+# Delamination<->Rebar corrosion (1.36M px), i.e. always between neighbours.
+ORDINAL_CHAIN = ["Minor spalling", "Moderate spalling", "Delamination", "Rebar corrosion"]
+
+
+def get_ordinal_chain(class_names):
+    """Class IDs of the damage stages, in order. [] when the variant lacks them."""
+    if not all(name in class_names for name in ORDINAL_CHAIN):
+        return []
+    return [class_names.index(name) for name in ORDINAL_CHAIN]
+
+
 def get_mask_remap(variant):
     """Return a 256-entry lookup table for cv2.LUT, or None if no remap is needed."""
     mapping = REMAPS.get(variant)

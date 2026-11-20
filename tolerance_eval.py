@@ -63,7 +63,9 @@ def main(args):
     loader = build_loader(args.data_dir, args.split, img_size, args.batch_size, args.num_workers, False)
 
     model = build_model(model_name, 3, nc, pretrained=False,
-                        head=ckpt.get("head", "flat"), class_names=class_names).to(device)
+                        head=ckpt.get("head", "flat"), class_names=class_names,
+                        use_bag=ckpt.get("use_bag", True), use_osh=ckpt.get("use_osh", False),
+                        n_stages=ckpt.get("n_stages", 4)).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 

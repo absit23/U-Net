@@ -3,14 +3,14 @@ import torch.nn as nn
 
 
 def build_model(model_name, n_channels=3, n_classes=7, pretrained=True, head="flat",
-                class_names=None, use_bag=True, use_osh=False):
+                class_names=None, use_bag=True, use_osh=False, n_stages=4):
     name = model_name.lower()
     if head != "flat" and name not in ("unet_mobilenet", "mobilenet_unet", "sob_unet"):
         raise ValueError(f"--head {head} is only implemented for unet_mobilenet.")
     if name in ("sob_unet", "sob"):
         from .sob_unet import SOBUNet
         return SOBUNet(n_channels, n_classes, pretrained, head, class_names,
-                       use_bag=use_bag, use_osh=use_osh)
+                       use_bag=use_bag, use_osh=use_osh, n_stages=n_stages)
     if name == "unet":
         from .unet import UNet
         return UNet(n_channels, n_classes)

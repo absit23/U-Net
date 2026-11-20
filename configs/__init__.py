@@ -1,1 +1,2 @@
-from .classes import VARIANTS, get_class_names, default_class_weights, get_mask_remap
+from .classes import (VARIANTS, get_class_names, default_class_weights, get_mask_remap,
+                      ORDINAL_CHAIN, get_ordinal_chain)

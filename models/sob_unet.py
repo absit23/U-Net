@@ -45,19 +45,42 @@ class BoundaryAttentionGate(nn.Module):
         return x * (1.0 + torch.sigmoid(edge_logits)), edge_logits
 
 
+class OrdinalStageHead(nn.Module):
+    """Predict how far along the damage sequence a pixel is.
+
+    For a chain of K ordered stages the head emits K-1 logits per pixel, the
+    k-th standing for P(stage >= k) (a CORAL-style cumulative encoding). It is
+    an auxiliary head: it shapes the shared decoder features during training and
+    is dropped at inference, so the segmentation output is unchanged.
+    """
+
+    def __init__(self, in_channels, n_stages, mid_channels=16):
+        super().__init__()
+        self.n_stages = n_stages
+        self.head = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, max(n_stages - 1, 1), kernel_size=1),
+        )
+
+    def forward(self, x):
+        return self.head(x)
+
+
 class SOBUNet(UNetMobileNetV3):
-    """Baseline U-Net MobileNetV3 with BAG (and later OSH) switched on per flag."""
+    """Baseline U-Net MobileNetV3 with BAG and/or OSH switched on per flag."""
 
     def __init__(self, n_channels=3, n_classes=7, pretrained=True, head="flat",
-                 class_names=None, use_bag=True, use_osh=False):
+                 class_names=None, use_bag=True, use_osh=False, n_stages=4):
         super().__init__(n_channels, n_classes, pretrained, head, class_names)
-        if use_osh:
-            raise NotImplementedError(
-                "OSH (Ordinal Stage Head) is not implemented yet; run with --no-use_osh.")
         self.use_bag = use_bag
         self.use_osh = use_osh
+        self.n_stages = n_stages
         if use_bag:
             self.bag = BoundaryAttentionGate(16)
+        if use_osh:
+            self.osh = OrdinalStageHead(16, n_stages)
 
     def forward(self, x):
         x1 = self.inc(x)
@@ -75,11 +98,21 @@ class SOBUNet(UNetMobileNetV3):
         if self.use_bag:
             x, edge_logits = self.bag(x)
 
+        ord_logits = self.osh(x) if self.use_osh else None
+
         x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=True)
         seg = self.outc(x)
 
-        if self.training and edge_logits is not None:
-            edge_logits = F.interpolate(edge_logits, size=seg.shape[-2:],
-                                        mode="bilinear", align_corners=True)
-            return torch.cat([seg, edge_logits], dim=1)
-        return seg
+        if not self.training or (edge_logits is None and ord_logits is None):
+            return seg
+
+        # training: append the auxiliary logits, in a fixed order the loss knows
+        parts = [seg]
+        size = seg.shape[-2:]
+        if edge_logits is not None:
+            parts.append(F.interpolate(edge_logits, size=size,
+                                       mode="bilinear", align_corners=True))
+        if ord_logits is not None:
+            parts.append(F.interpolate(ord_logits, size=size,
+                                       mode="bilinear", align_corners=True))
+        return torch.cat(parts, dim=1)

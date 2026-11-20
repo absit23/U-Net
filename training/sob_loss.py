@@ -22,13 +22,37 @@ from .losses import WeightedCombinedLoss
 
 class SOBLoss(nn.Module):
     def __init__(self, num_classes, weight_ce=1.0, weight_dice=1.0, class_weights=None,
-                 weight_edge=0.3, edge_width=1, pos_weight_cap=20.0):
+                 weight_edge=0.3, edge_width=1, pos_weight_cap=20.0,
+                 ordinal_chain=None, weight_ordinal=0.3):
         super().__init__()
         self.num_classes = num_classes
         self.weight_edge = weight_edge
         self.edge_width = int(edge_width)
         self.pos_weight_cap = pos_weight_cap
+        self.ordinal_chain = list(ordinal_chain or [])
+        self.weight_ordinal = weight_ordinal
+        self.n_edge = 0          # set by the caller to 1 when BAG is on
+        self.n_ordinal = 0       # set by the caller to len(chain)-1 when OSH is on
         self.base = WeightedCombinedLoss(num_classes, weight_ce, weight_dice, class_weights)
+
+    def enable(self, use_bag, use_osh):
+        """Declare which auxiliary heads the model emits, so channels line up."""
+        self.n_edge = 1 if use_bag else 0
+        self.n_ordinal = (len(self.ordinal_chain) - 1) if (use_osh and self.ordinal_chain) else 0
+        return self
+
+    def ordinal_loss(self, logits, targets):
+        """Cumulative (CORAL) BCE over the damage stages, on chain pixels only."""
+        stage = torch.full_like(targets, -1, dtype=torch.long)
+        for k, class_id in enumerate(self.ordinal_chain):
+            stage[targets == class_id] = k
+        valid = (stage >= 0).unsqueeze(1)                      # [B,1,H,W]
+        if valid.sum() == 0:
+            return logits.sum() * 0.0                          # keeps the graph alive
+        levels = torch.arange(1, len(self.ordinal_chain), device=logits.device)
+        target = (stage.unsqueeze(1) >= levels.view(1, -1, 1, 1)).to(logits.dtype)
+        per_pixel = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+        return (per_pixel * valid).sum() / (valid.sum() * logits.shape[1]).clamp(min=1)
 
     @staticmethod
     def boundary_target(masks, width=1):
@@ -43,19 +67,30 @@ class SOBLoss(nn.Module):
         # eval mode: the model returns segmentation logits only
         if outputs.shape[1] == self.num_classes:
             return self.base(outputs, targets)
-        if outputs.shape[1] != self.num_classes + 1:
+
+        expected = self.num_classes + self.n_edge + self.n_ordinal
+        if outputs.shape[1] != expected:
             raise ValueError(
-                f"SOBLoss expected {self.num_classes} or {self.num_classes + 1} output "
-                f"channels, got {outputs.shape[1]}.")
+                f"SOBLoss expected {self.num_classes} or {expected} output channels, "
+                f"got {outputs.shape[1]}.")
 
         seg = outputs[:, :self.num_classes]
-        edge_logits = outputs[:, self.num_classes:self.num_classes + 1]
         loss = self.base(seg, targets)
+        targets_long = targets.long()
+        cursor = self.num_classes
 
-        target_edge = self.boundary_target(targets.long(), self.edge_width)
-        pos = target_edge.sum()
-        neg = target_edge.numel() - pos
-        pos_weight = torch.clamp(neg / pos.clamp(min=1.0), max=self.pos_weight_cap).view(1)
-        edge_loss = F.binary_cross_entropy_with_logits(
-            edge_logits, target_edge, pos_weight=pos_weight)
-        return loss + self.weight_edge * edge_loss
+        if self.n_edge:
+            edge_logits = outputs[:, cursor:cursor + 1]
+            cursor += 1
+            target_edge = self.boundary_target(targets_long, self.edge_width)
+            pos = target_edge.sum()
+            neg = target_edge.numel() - pos
+            pos_weight = torch.clamp(neg / pos.clamp(min=1.0), max=self.pos_weight_cap).view(1)
+            loss = loss + self.weight_edge * F.binary_cross_entropy_with_logits(
+                edge_logits, target_edge, pos_weight=pos_weight)
+
+        if self.n_ordinal:
+            ord_logits = outputs[:, cursor:cursor + self.n_ordinal]
+            loss = loss + self.weight_ordinal * self.ordinal_loss(ord_logits, targets_long)
+
+        return loss

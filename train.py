@@ -10,7 +10,7 @@ import os
 
 import torch
 
-from configs import get_class_names, get_mask_remap
+from configs import get_class_names, get_mask_remap, get_ordinal_chain, ORDINAL_CHAIN
 from datasets import build_loader
 from models import build_model, print_model_summary
 from models.builder import AVAILABLE_MODELS
@@ -52,6 +52,8 @@ def parse_args():
                    help="sob_unet: Ordinal Stage Head on/off (not implemented yet)")
     p.add_argument("--weight_edge", type=float, default=0.3,
                    help="sob_unet: weight of the boundary loss term")
+    p.add_argument("--weight_ordinal", type=float, default=0.3,
+                   help="sob_unet: weight of the ordinal stage loss term")
     p.add_argument("--seed", type=int, default=None,
                    help="fix the random seed so a run can be repeated; omit for an unseeded run")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
@@ -98,19 +100,35 @@ def main(args):
                               remap=remap)
 
     #model = build_model(args.model_name, 3, num_classes, args.pretrained).to(device)
+    chain = get_ordinal_chain(class_names)
+    if args.use_osh and args.model_name.lower() in ("sob_unet", "sob"):
+        if len(chain) < 3:
+            raise ValueError(f"--use_osh needs the damage stages {ORDINAL_CHAIN} "
+                             f"in the variant's class list; got {class_names}.")
+        print("Ordinal stages: " + " -> ".join(f"{class_names[c]}({c})" for c in chain))
+
     model = build_model(args.model_name, 3, num_classes, args.pretrained,
                     head=args.head, class_names=class_names,
-                    use_bag=args.use_bag, use_osh=args.use_osh).to(device)
+                    use_bag=args.use_bag, use_osh=args.use_osh,
+                    n_stages=max(len(chain), 2)).to(device)
     
     print_model_summary(model, args.model_name, args.batch_size, args.img_size, device)
 
     weights = resolve_class_weights(args.class_weights, class_names, args.data_dir, remap=remap)
     w = torch.tensor(weights, dtype=torch.float32, device=device)
-    if args.model_name.lower() in ("sob_unet", "sob") and args.use_bag:
+    is_sob = args.model_name.lower() in ("sob_unet", "sob")
+    if is_sob and (args.use_bag or args.use_osh):
         from training.sob_loss import SOBLoss
         criterion = SOBLoss(num_classes, args.weight_ce, args.weight_dice, w,
-                            weight_edge=args.weight_edge)
-        print(f"Loss: segmentation + boundary term (weight {args.weight_edge})")
+                            weight_edge=args.weight_edge,
+                            ordinal_chain=chain,
+                            weight_ordinal=args.weight_ordinal).enable(args.use_bag, args.use_osh)
+        extras = []
+        if args.use_bag:
+            extras.append(f"boundary ({args.weight_edge})")
+        if args.use_osh:
+            extras.append(f"ordinal ({args.weight_ordinal})")
+        print("Loss: segmentation + " + " + ".join(extras))
     else:
         criterion = WeightedCombinedLoss(num_classes, args.weight_ce, args.weight_dice, w)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -155,7 +173,7 @@ def main(args):
             "best_miou": best_miou, "best_epoch": best_epoch, "best_metrics": best_metrics,
             "history": history, "variant": args.variant, "class_names": class_names,
             "model_name": args.model_name, "head": args.head, "img_size": args.img_size, "class_weights": weights,
-            "use_bag": args.use_bag, "use_osh": args.use_osh,
+            "use_bag": args.use_bag, "use_osh": args.use_osh, "n_stages": max(len(chain), 2),
         }
         save_checkpoint(last_path(exp_dir, args.model_name), state)
         if is_best:
