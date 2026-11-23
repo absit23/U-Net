@@ -18,6 +18,7 @@ from training.checkpoint import best_path, last_path, save_checkpoint, load_chec
 from training.class_weights import resolve_class_weights
 from training.loops import train_one_epoch, evaluate_loader
 from training.losses import WeightedCombinedLoss
+from training.loss_variants import build_loss, LOSS_CHOICES
 from training.metrics import SegmentationMetrics
 from training.tracker import ExperimentTracker, get_next_exp_name, new_history, print_results
 
@@ -54,6 +55,11 @@ def parse_args():
                    help="sob_unet: weight of the boundary loss term")
     p.add_argument("--weight_ordinal", type=float, default=0.3,
                    help="sob_unet: weight of the ordinal stage loss term")
+    p.add_argument("--loss", default="ce_dice", choices=LOSS_CHOICES,
+                   help="segmentation loss; ce_dice is the baseline used so far")
+    p.add_argument("--tversky_alpha", type=float, default=0.3)
+    p.add_argument("--tversky_beta", type=float, default=0.7)
+    p.add_argument("--focal_gamma", type=float, default=2.0)
     p.add_argument("--seed", type=int, default=None,
                    help="fix the random seed so a run can be repeated; omit for an unseeded run")
     p.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
@@ -116,21 +122,29 @@ def main(args):
 
     weights = resolve_class_weights(args.class_weights, class_names, args.data_dir, remap=remap)
     w = torch.tensor(weights, dtype=torch.float32, device=device)
+    base_loss = build_loss(args.loss, num_classes, w, args.weight_ce, args.weight_dice,
+                           focal_gamma=args.focal_gamma,
+                           tversky_alpha=args.tversky_alpha,
+                           tversky_beta=args.tversky_beta).to(device)
+    describe = base_loss.describe() if hasattr(base_loss, "describe") else args.loss
+
     is_sob = args.model_name.lower() in ("sob_unet", "sob")
     if is_sob and (args.use_bag or args.use_osh):
         from training.sob_loss import SOBLoss
         criterion = SOBLoss(num_classes, args.weight_ce, args.weight_dice, w,
                             weight_edge=args.weight_edge,
                             ordinal_chain=chain,
-                            weight_ordinal=args.weight_ordinal).enable(args.use_bag, args.use_osh)
+                            weight_ordinal=args.weight_ordinal,
+                            base=base_loss).enable(args.use_bag, args.use_osh)
         extras = []
         if args.use_bag:
             extras.append(f"boundary ({args.weight_edge})")
         if args.use_osh:
             extras.append(f"ordinal ({args.weight_ordinal})")
-        print("Loss: segmentation + " + " + ".join(extras))
+        print(f"Loss: {describe} + " + " + ".join(extras))
     else:
-        criterion = WeightedCombinedLoss(num_classes, args.weight_ce, args.weight_dice, w)
+        criterion = base_loss
+        print(f"Loss: {describe}")
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     metrics = SegmentationMetrics(num_classes)

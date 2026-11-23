@@ -23,7 +23,7 @@ from .losses import WeightedCombinedLoss
 class SOBLoss(nn.Module):
     def __init__(self, num_classes, weight_ce=1.0, weight_dice=1.0, class_weights=None,
                  weight_edge=0.3, edge_width=1, pos_weight_cap=20.0,
-                 ordinal_chain=None, weight_ordinal=0.3):
+                 ordinal_chain=None, weight_ordinal=0.3, base=None):
         super().__init__()
         self.num_classes = num_classes
         self.weight_edge = weight_edge
@@ -33,7 +33,8 @@ class SOBLoss(nn.Module):
         self.weight_ordinal = weight_ordinal
         self.n_edge = 0          # set by the caller to 1 when BAG is on
         self.n_ordinal = 0       # set by the caller to len(chain)-1 when OSH is on
-        self.base = WeightedCombinedLoss(num_classes, weight_ce, weight_dice, class_weights)
+        self.base = base if base is not None else WeightedCombinedLoss(
+            num_classes, weight_ce, weight_dice, class_weights)
 
     def enable(self, use_bag, use_osh):
         """Declare which auxiliary heads the model emits, so channels line up."""
