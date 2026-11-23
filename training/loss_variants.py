@@ -28,7 +28,8 @@ import torch.nn.functional as F
 
 from .losses import WeightedCombinedLoss
 
-LOSS_CHOICES = ["ce_dice", "focal_dice", "tversky", "focal_tversky", "celik", "ce_dice_skel"]
+LOSS_CHOICES = ["ce_dice", "ce_dice_s1", "ce_dice_present", "focal_dice", "tversky",
+                "focal_tversky", "celik", "ce_dice_skel"]
 
 
 def _one_hot(targets, num_classes, dtype):
@@ -106,7 +107,7 @@ class SkeletonRecallLoss(nn.Module):
     structures stop being drowned out by area-based terms.
     """
 
-    def __init__(self, num_classes, iters=3, ignore_background=True):
+    def __init__(self, num_classes, iters=10, ignore_background=True):
         super().__init__()
         self.num_classes = num_classes
         self.iters = iters
@@ -155,9 +156,26 @@ class CompositeLoss(nn.Module):
 
 
 class DiceTerm(nn.Module):
-    def __init__(self, num_classes):
+    """Soft Dice.
+
+    `smooth` matters far more than it looks. With the usual 1e-7, a class that
+    is absent from the batch scores ~0 instead of 1, because the model's tiny
+    leftover probabilities dominate a near-zero denominator. A perfect
+    prediction on a batch where 4 of 8 classes are absent still returns a Dice
+    loss of 0.497, and the gradient is then mostly about suppressing absent
+    classes rather than segmenting present ones. Rare classes are absent from
+    most batches, so they receive that suppression almost every step.
+
+    smooth=1.0 is the standard fix: absent and correctly-unpredicted classes
+    score 1 and contribute nothing. `present_only` instead averages over the
+    classes actually in the batch.
+    """
+
+    def __init__(self, num_classes, smooth=1e-7, present_only=False):
         super().__init__()
         self.num_classes = num_classes
+        self.smooth = smooth
+        self.present_only = present_only
 
     def forward(self, logits, targets):
         probs = F.softmax(logits, dim=1)
@@ -165,7 +183,13 @@ class DiceTerm(nn.Module):
         dims = (0, 2, 3)
         inter = (probs * one_hot).sum(dims)
         card = (probs + one_hot).sum(dims)
-        return 1.0 - ((2.0 * inter + 1e-7) / (card + 1e-7)).mean()
+        dice = (2.0 * inter + self.smooth) / (card + self.smooth)
+        if self.present_only:
+            present = one_hot.sum(dims) > 0
+            if present.sum() == 0:
+                return probs.sum() * 0.0
+            dice = dice[present]
+        return 1.0 - dice.mean()
 
 
 class CETerm(nn.Module):
@@ -184,6 +208,17 @@ def build_loss(name, num_classes, class_weights=None, weight_ce=1.0, weight_dice
     name = name.lower()
     if name == "ce_dice":
         return WeightedCombinedLoss(num_classes, weight_ce, weight_dice, class_weights)
+    if name == "ce_dice_s1":          # same as ce_dice, but Dice smoothing 1.0
+        return CompositeLoss(num_classes, [
+            ("ce", weight_ce, CETerm(class_weights)),
+            ("dice(s=1)", weight_dice, DiceTerm(num_classes, smooth=1.0)),
+        ])
+    if name == "ce_dice_present":     # same as ce_dice, but Dice over present classes only
+        return CompositeLoss(num_classes, [
+            ("ce", weight_ce, CETerm(class_weights)),
+            ("dice(present)", weight_dice,
+             DiceTerm(num_classes, smooth=1e-7, present_only=True)),
+        ])
     if name == "focal_dice":
         return CompositeLoss(num_classes, [
             ("focal", 1.0, FocalLoss(focal_gamma, class_weights)),
